@@ -1,18 +1,34 @@
 const fs = require('fs');
 const path = require('path');
 
-const DATA_DIR = path.join(__dirname, 'data');
+const os = require('os');
+
+let DATA_DIR = path.join(__dirname, 'data');
+const isServerless = process.env.VERCEL || process.env.NOW_BUILDER || process.env.LAMBDA_TASK_ROOT;
+
+if (isServerless) {
+  DATA_DIR = path.join(os.tmpdir(), 'data');
+}
 
 // Ensure data directory exists
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+try {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+} catch (err) {
+  console.warn(`Could not create directory at ${DATA_DIR}, falling back to temp root directly.`, err);
+  DATA_DIR = os.tmpdir();
 }
 
 class JsonTable {
   constructor(tableName) {
     this.filePath = path.join(DATA_DIR, `${tableName}.json`);
     if (!fs.existsSync(this.filePath)) {
-      fs.writeFileSync(this.filePath, JSON.stringify([], null, 2), 'utf8');
+      try {
+        fs.writeFileSync(this.filePath, JSON.stringify([], null, 2), 'utf8');
+      } catch (err) {
+        console.error(`Error creating database file: ${this.filePath}`, err);
+      }
     }
   }
 
