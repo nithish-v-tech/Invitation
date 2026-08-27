@@ -512,28 +512,48 @@ app.get('/api/geocode', async (req, res) => {
 
   try {
     const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
-    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1`;
     
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'InvitationManagementSystem/1.0.0 (contact: test@example.com)'
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(`Geocoding server error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    if (data && data.length > 0) {
-      res.json({
-        lat: parseFloat(data[0].lat),
-        lon: parseFloat(data[0].lon),
-        display_name: data[0].display_name
+    // First attempt: Nominatim OSM
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1`;
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept-Language': 'en-US,en;q=0.9'
+        }
       });
-    } else {
-      res.status(404).json({ error: 'Address not found' });
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.length > 0) {
+          return res.json({
+            lat: parseFloat(data[0].lat),
+            lon: parseFloat(data[0].lon),
+            display_name: data[0].display_name
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('Nominatim error, trying Photon fallback:', e.message);
     }
+
+    // Second attempt fallback: Photon OSM Geocoder
+    const photonUrl = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=1`;
+    const photonRes = await fetch(photonUrl);
+    if (photonRes.ok) {
+      const photonData = await photonRes.json();
+      if (photonData.features && photonData.features.length > 0) {
+        const feat = photonData.features[0];
+        const [lon, lat] = feat.geometry.coordinates;
+        const name = [feat.properties.name, feat.properties.street, feat.properties.city, feat.properties.state, feat.properties.country].filter(Boolean).join(', ');
+        return res.json({
+          lat,
+          lon,
+          display_name: name || q
+        });
+      }
+    }
+
+    res.status(404).json({ error: 'Address not found' });
   } catch (error) {
     console.error('Geocoding error:', error);
     res.status(500).json({ error: 'Geocoding service unavailable' });
